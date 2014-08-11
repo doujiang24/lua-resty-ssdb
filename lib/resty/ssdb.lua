@@ -13,14 +13,18 @@ local pairs = pairs
 local unpack = unpack
 local setmetatable = setmetatable
 local tonumber = tonumber
-local error = error
-local gmatch = string.gmatch
 local remove = table.remove
 
 
-module(...)
+local ok, new_tab = pcall(require, "table.new")
+if not ok then
+    new_tab = function (narr, nrec) return {} end
+end
 
-_VERSION = '0.02'
+
+local _M = new_tab(0, 56)
+_M._VERSION = '0.20'
+
 
 local commands = {
     "set",                  "get",                 "del",
@@ -39,15 +43,15 @@ local commands = {
     "zincr",                "zdecr",               "zexists",
     "zsize",                "zlist",
     --[[ "multi_zset", ]]   "multi_zget",          "multi_zdel",
-    "multi_zexists",        "multi_zsize"
-
+    "multi_zexists",        "multi_zsize",
 }
+
 
 
 local mt = { __index = _M }
 
 
-function new(self)
+function _M.new(self)
     local sock, err = tcp()
     if not sock then
         return nil, err
@@ -56,7 +60,7 @@ function new(self)
 end
 
 
-function set_timeout(self, timeout)
+function _M.set_timeout(self, timeout)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -66,7 +70,7 @@ function set_timeout(self, timeout)
 end
 
 
-function connect(self, ...)
+function _M.connect(self, ...)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -76,7 +80,7 @@ function connect(self, ...)
 end
 
 
-function set_keepalive(self, ...)
+function _M.set_keepalive(self, ...)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -86,7 +90,7 @@ function set_keepalive(self, ...)
 end
 
 
-function get_reused_times(self)
+function _M.get_reused_times(self)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -96,7 +100,7 @@ function get_reused_times(self)
 end
 
 
-function close(self)
+function _M.close(self)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -149,7 +153,7 @@ local function _gen_req(args)
             insert(req, arg)
             insert(req, "\n")
         else
-            return nil, err
+            return nil
         end
     end
     insert(req, "\n")
@@ -196,7 +200,7 @@ for i = 1, #commands do
 end
 
 
-function multi_hset(self, hashname, ...)
+function _M.multi_hset(self, hashname, ...)
     local args = {...}
     if #args == 1 then
         local t = args[1]
@@ -214,7 +218,7 @@ function multi_hset(self, hashname, ...)
 end
 
 
-function multi_zset(self, keyname, ...)
+function _M.multi_zset(self, keyname, ...)
     local args = {...}
     if #args == 1 then
         local t = args[1]
@@ -232,17 +236,17 @@ function multi_zset(self, keyname, ...)
 end
 
 
-function init_pipeline(self)
+function _M.init_pipeline(self)
     self._reqs = {}
 end
 
 
-function cancel_pipeline(self)
+function _M.cancel_pipeline(self)
     self._reqs = nil
 end
 
 
-function commit_pipeline(self)
+function _M.commit_pipeline(self)
     local reqs = self._reqs
     if not reqs then
         return nil, "no pipeline"
@@ -278,7 +282,7 @@ function commit_pipeline(self)
 end
 
 
-function array_to_hash(self, t)
+function _M.array_to_hash(self, t)
     local h = {}
     for i = 1, #t, 2 do
         h[t[i]] = t[i + 1]
@@ -287,28 +291,4 @@ function array_to_hash(self, t)
 end
 
 
-local class_mt = {
-    -- to prevent use of casual module global variables
-    __newindex = function (table, key, val)
-        error('attempt to write to undeclared variable "' .. key .. '"')
-    end
-}
-
-
-function add_commands(...)
-    local cmds = {...}
-    local newindex = class_mt.__newindex
-    class_mt.__newindex = nil
-    for i = 1, #cmds do
-        local cmd = cmds[i]
-        _M[cmd] =
-            function (self, ...)
-                return _do_cmd(self, cmd, ...)
-            end
-    end
-    class_mt.__newindex = newindex
-end
-
-
-setmetatable(_M, class_mt)
-
+return _M

@@ -5,7 +5,6 @@
 
 local sub = string.sub
 local tcp = ngx.socket.tcp
-local insert = table.insert
 local concat = table.concat
 local len = string.len
 local null = ngx.null
@@ -111,57 +110,74 @@ end
 
 
 local function _read_reply(sock)
-	local val = {}
+    local resp = {}
+    local i = 0
 
 	while true do
 		-- read block size
-		local line, err, partial = sock:receive()
-		if not line or len(line)==0 then
+		local line, err = sock:receive()
+        if not line then
+            if err == "timeout" then
+                sock:close()
+            end
+            return nil, err
+
+        elseif #line == 0 then
 			-- packet end
 			break
 		end
-		local d_len = tonumber(line)
+
+		local size = tonumber(line)
 
 		-- read block data
-		local data, err, partial = sock:receive(d_len)
-		insert(val, data);
+		local data, err = sock:receive(size)
+        if not data then
+            if err == "timeout" then
+                sock:close()
+            end
+            return nil, err
+        end
 
 		-- ignore the trailing lf/crlf after block data
-		local line, err, partial = sock:receive()
+        local dummy, err = sock:receive()
+        if not dummy then
+            return nil, err
+        end
+
+        i = i + 1
+        resp[i] = data
 	end
 
-	local v_num = tonumber(#val)
+	local v_num = tonumber(#resp)
 
 	if v_num == 1 then
-		return val
+		return resp
 	else
-		remove(val,1)
-		return val
+		remove(resp, 1)
+		return resp
 	end
 end
 
 
 local function _gen_req(args)
-    local req = {}
+    local nargs = #args
+    local req = new_tab(nargs + 1, 0)
+    local nbits = 1
 
     for i = 1, #args do
         local arg = args[i]
 
-        if arg then
-            insert(req, len(arg))
-            insert(req, "\n")
-            insert(req, arg)
-            insert(req, "\n")
-        else
-            return nil
+        if type(arg) ~= "string" then
+            arg = tostring(arg)
         end
+        req[nbits] = #arg .. "\n" .. arg .. "\n"
+
+        nbits = nbits + 1
     end
-    insert(req, "\n")
+    req[nbits] = "\n"
 
     -- it is faster to do string concatenation on the Lua land
-    -- print("request: ", table.concat(req, ""))
-
-    return concat(req, "")
+    return concat(req)
 end
 
 
@@ -177,7 +193,7 @@ local function _do_cmd(self, ...)
 
     local reqs = self._reqs
     if reqs then
-        insert(reqs, req)
+        reqs[#reqs + 1] = req
         return
     end
 
@@ -204,10 +220,19 @@ function _M.multi_hset(self, hashname, ...)
     local args = {...}
     if #args == 1 then
         local t = args[1]
-        local array = {}
+
+        local n = 0
         for k, v in pairs(t) do
-            insert(array, k)
-            insert(array, v)
+            n = n + 2
+        end
+
+        local array = new_tab(n, 0)
+
+        local i = 0
+        for k, v in pairs(t) do
+            array[i + 1] = k
+            array[i + 2] = v
+            i = i + 2
         end
         -- print("key", hashname)
         return _do_cmd(self, "multi_hset", hashname, unpack(array))
@@ -222,10 +247,19 @@ function _M.multi_zset(self, keyname, ...)
     local args = {...}
     if #args == 1 then
         local t = args[1]
-        local array = {}
+
+        local n = 0
         for k, v in pairs(t) do
-            insert(array, k)
-            insert(array, v)
+            n = n + 2
+        end
+
+        local array = new_tab(n, 0)
+
+        local i = 0
+        for k, v in pairs(t) do
+            array[i + 1] = k
+            array[i + 2] = v
+            i = i + 2
         end
         -- print("key", keyname)
         return _do_cmd(self, "multi_zset", keyname, unpack(array))
@@ -264,17 +298,19 @@ function _M.commit_pipeline(self)
         return nil, err
     end
 
-    local vals = {}
-    for i = 1, #reqs do
+    local nreqs = #reqs
+    local vals = new_tab(nreqs, 0)
+
+    for i = 1, nreqs do
         local res, err = _read_reply(sock)
         if res then
-            insert(vals, res)
+            vals[i] = res
 
         elseif res == nil then
             return nil, err
 
         else
-            insert(vals, err)
+            vals[i] = res
         end
     end
 

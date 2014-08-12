@@ -230,13 +230,13 @@ local function _do_cmd(self, cmd, ...)
         return nil, "not initialized"
     end
 
-    local req = _gen_req(args)
-
-    local reqs = self._reqs
-    if reqs then
-        reqs[#reqs + 1] = req
+    local cmds = self._cmds
+    if cmds then
+        cmds[#cmds + 1] = args
         return
     end
+
+    local req = _gen_req(args)
 
     local bytes, err = sock:send(req)
     if not bytes then
@@ -318,26 +318,32 @@ end
 
 
 function _M.init_pipeline(self)
-    self._reqs = {}
+    self._cmds = {}
 end
 
 
 function _M.cancel_pipeline(self)
-    self._reqs = nil
+    self._cmds = nil
 end
 
 
 function _M.commit_pipeline(self)
-    local reqs = self._reqs
-    if not reqs then
+    local cmds = self._cmds
+    if not cmds then
         return nil, "no pipeline"
     end
 
-    self._reqs = nil
+    self._cmds = nil
 
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
+    end
+
+    local ncmds = #cmds
+    local reqs = new_tab(ncmds, 0)
+    for i = 1, ncmds do
+        reqs[i] = _gen_req(cmds[i])
     end
 
     local bytes, err = sock:send(reqs)
@@ -345,19 +351,22 @@ function _M.commit_pipeline(self)
         return nil, err
     end
 
-    local nreqs = #reqs
-    local vals = new_tab(nreqs, 0)
+    local vals = new_tab(ncmds, 0)
 
-    for i = 1, nreqs do
-        local res, err = _read_reply(sock)
+    for i = 1, ncmds do
+        local res, err = _read_reply(sock, cmds[i][1])
         if res then
             vals[i] = res
 
         elseif res == nil then
+            if err == "timeout" then
+                close(self)
+            end
             return nil, err
 
         else
-            vals[i] = res
+            -- be a valid ssdb error value
+            vals[i] = { false, err }
         end
     end
 

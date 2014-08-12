@@ -21,28 +21,56 @@ if not ok then
 end
 
 
-local _M = new_tab(0, 56)
+local T_NUMBER = 1
+local T_STRING = 2
+local T_ARRAY = 3
+
+
+local _M = new_tab(0, 88)
 _M._VERSION = '0.20'
 
+local result_types = {}
 
-local commands = {
-    "set",                  "get",                 "del",
-    "scan",                 "rscan",               "keys",
-    "incr",                 "decr",                "exists",
-    "multi_set",            "multi_get",           "multi_del",
-    "multi_exists",
-    "hset",                 "hget",                "hdel",
-    "hscan",                "hrscan",              "hkeys",
-    "hincr",                "hdecr",               "hexists",
-    "hsize",                "hlist",
-    --[[ "multi_hset", ]]   "multi_hget",          "multi_hdel",
-    "multi_hexists",        "multi_hsize",
-    "zset",                 "zget",                "zdel",
-    "zscan",                "zrscan",              "zkeys",
-    "zincr",                "zdecr",               "zexists",
-    "zsize",                "zlist",
-    --[[ "multi_zset", ]]   "multi_zget",          "multi_zdel",
-    "multi_zexists",        "multi_zsize",
+
+local type_commands = {
+    {   -- one number
+        'getbit',           'setbit',           'countbit',
+        'strlen',           'set',              'setx',
+        'setnx',            'zset',             'hset',
+        'qpush',            'qpush_front',      'qpush_back',
+        'del',              'zdel',             'hdel',
+        'hsize',            'zsize',            'qsize',
+        'hclear',           'zclear',           'qclear',
+        'multi_set',        'multi_del',        'multi_hset',
+        'multi_hdel',       'multi_zset',       'multi_zdel',
+        'incr',             'decr',             'zincr',
+        'zdecr',            'hincr',            'hdecr',
+        'zget',             'zrank',            'zrrank',
+        'zcount',           'zsum',             'zremrangebyrank',
+        'zremrangebyscore', 'zavg',
+        -- value 1 means exists and 0 not
+        'exists',           'hexists',          'zexists',
+    },
+    {   -- one string
+        'get',              'substr',           'getset',
+        'hget',             'qget',             'qfront',
+        'qback',            'qpop',             'qpop_front',
+        'qpop_back',
+    },
+    {   -- array string
+        'keys',             'zkeys',            'hkeys',
+        'hlist',            'zlist',            'qslice',
+        -- hash string
+        'scan',             'rscan',            'hscan',
+        'hrscan',           'hgetall',          'multi_hsize',
+        'multi_zsize',      'multi_get',        'multi_hget',
+        'multi_zget',
+        -- hash number
+        'zscan',            'zrscan',           'zrange',
+        'zrrange',
+        -- value 1 means exists and 0 not
+        'multi_exists',     'multi_hexists',    'multi_zexists',
+    },
 }
 
 
@@ -109,7 +137,7 @@ function _M.close(self)
 end
 
 
-local function _read_reply(sock)
+local function _read_reply(sock, cmd)
     local resp = {}
     local i = 0
 
@@ -148,14 +176,27 @@ local function _read_reply(sock)
         resp[i] = data
 	end
 
-	local v_num = tonumber(#resp)
+    if resp[1] == "ok" then
+        local res_typ = result_types[cmd]
 
-	if v_num == 1 then
-		return resp
-	else
-		remove(resp, 1)
-		return resp
-	end
+        if res_typ == T_NUMBER then
+            return tonumber(resp[2])
+
+        elseif res_typ == T_STRING then
+            return resp[2]
+
+        elseif res_typ == T_ARRAY then
+            remove(resp, 1)
+            return resp
+        end
+
+        return nil, "invalid command"
+
+    elseif resp[1] == "not_found" then
+        return null
+    end
+
+    return nil, resp[1]
 end
 
 
@@ -181,8 +222,8 @@ local function _gen_req(args)
 end
 
 
-local function _do_cmd(self, ...)
-    local args = {...}
+local function _do_cmd(self, cmd, ...)
+    local args = { cmd, ...}
 
     local sock = self.sock
     if not sock then
@@ -202,17 +243,23 @@ local function _do_cmd(self, ...)
         return nil, err
     end
 
-    return _read_reply(sock)
+    return _read_reply(sock, cmd)
 end
 
 
-for i = 1, #commands do
-    local cmd = commands[i]
+for res_typ = 1, #type_commands do
+    local commands = type_commands[res_typ]
 
-    _M[cmd] =
-        function (self, ...)
-            return _do_cmd(self, cmd, ...)
-        end
+    for i = 1, #commands do
+        local cmd = commands[i]
+
+        _M[cmd] =
+            function (self, ...)
+                return _do_cmd(self, cmd, ...)
+            end
+
+        result_types[cmd] = res_typ
+    end
 end
 
 

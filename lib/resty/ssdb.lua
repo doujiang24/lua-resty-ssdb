@@ -141,9 +141,9 @@ local function _read_reply(sock, cmd)
     local resp = {}
     local i = 0
 
-	while true do
-		-- read block size
-		local line, err = sock:receive()
+    while true do
+        -- read block size
+        local line, err = sock:receive()
         if not line then
             if err == "timeout" then
                 sock:close()
@@ -151,14 +151,14 @@ local function _read_reply(sock, cmd)
             return nil, err
 
         elseif #line == 0 then
-			-- packet end
-			break
-		end
+            -- packet end
+            break
+        end
 
-		local size = tonumber(line)
+        local size = tonumber(line)
 
-		-- read block data
-		local data, err = sock:receive(size)
+        -- read block data
+        local data, err = sock:receive(size)
         if not data then
             if err == "timeout" then
                 sock:close()
@@ -166,7 +166,7 @@ local function _read_reply(sock, cmd)
             return nil, err
         end
 
-		-- ignore the trailing lf/crlf after block data
+        -- ignore the trailing lf/crlf after block data
         local dummy, err = sock:receive()
         if not dummy then
             return nil, err
@@ -174,7 +174,7 @@ local function _read_reply(sock, cmd)
 
         i = i + 1
         resp[i] = data
-	end
+    end
 
     if resp[1] == "ok" then
         local res_typ = result_types[cmd]

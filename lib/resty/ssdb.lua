@@ -31,7 +31,7 @@ local commands = {
     "hset",                 "hget",                "hdel",
     "hscan",                "hrscan",              "hkeys",
     "hincr",                "hdecr",               "hexists",
-    "hsize",                "hlist",
+    "hsize",                "hlist",               "hmget",
     --[[ "multi_hset", ]]   "multi_hget",          "multi_hdel",
     "multi_hexists",        "multi_hsize",
     "zset",                 "zget",                "zdel",
